@@ -1,5 +1,4 @@
 import sys
-import wandb
 import numpy as np
 from numpy.linalg import inv, norm
 from tqdm import tqdm
@@ -85,12 +84,17 @@ def run_shine_mapping_incremental():
         if processed_frame == config.freeze_after_frame: # freeze the decoder after certain frame
             print("Freeze the decoder")
             freeze_model(geo_mlp) # fixed the decoder
+            if config.semantic_on:
+                freeze_model(sem_mlp) # fixed the decoder
 
         T0 = get_time()
         # preprocess, sample data and update the octree
         # if continual_learning_reg is on, we only keep the current frame's sample in the data pool,
         # otherwise we accumulate the data pool with the current frame's sample
-        dataset.process_frame(frame_id, incremental_on=config.continual_learning_reg)
+
+        local_data_only = False # this one would lead to the forgetting issue
+
+        dataset.process_frame(frame_id, incremental_on=config.continual_learning_reg or local_data_only)
         
         octree_feat = list(octree.parameters())
         opt = setup_optimizer(config, octree_feat, geo_mlp_param, None, sigma_size)
@@ -100,7 +104,9 @@ def run_shine_mapping_incremental():
 
         for iter in tqdm(range(config.iters)):
             # load batch data (avoid using dataloader because the data are already in gpu, memory vs speed)
-            coord, sdf_label, normal_label, sem_label, weight = dataset.get_batch() # do not use the ray loss
+
+            # we do not use the ray rendering loss here for the incremental mapping
+            coord, sdf_label, _, _, _, sem_label, weight = dataset.get_batch() 
             
             if config.normal_loss_on or config.ekional_loss_on:
                 coord.requires_grad_(True)
@@ -148,7 +154,7 @@ def run_shine_mapping_incremental():
 
             if config.wandb_vis_on:
                 wandb_log_content = {'iter': total_iter, 'loss/total_loss': cur_loss, 'loss/sdf_loss': sdf_loss, \
-                    'loss/reg':reg_loss, 'loss/eikonal_loss': eikonal_loss, 'loss/sem_loss': sem_loss} 
+                    'loss/reg_loss':reg_loss, 'loss/eikonal_loss': eikonal_loss, 'loss/sem_loss': sem_loss} 
                 wandb.log(wandb_log_content)
         
         # calculate the importance of each octree feature
