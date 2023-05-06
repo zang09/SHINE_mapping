@@ -1,6 +1,6 @@
 #!/bin/bash
 
-root_path=xxx/data/neural_rgbd_data
+root_path=./data
 sequence_name=green_room
 base_path=${root_path}/${sequence_name}
 
